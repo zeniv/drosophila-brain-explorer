@@ -12,4 +12,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor':  ['react', 'react-dom', 'react-router-dom'],
+          'charts':        ['recharts'],
+          'state':         ['zustand', '@tanstack/react-query'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 400,
+  },
 })
