@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+dist/
+*.parquet
+*.h5
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Data (большие файлы коннектома — не в git)
+data/connections.parquet
+data/completeness.csv
+data/results/
+
+# Docker
+.docker/
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL certificates
+nginx/ssl/
