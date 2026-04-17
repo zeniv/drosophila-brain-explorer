@@ -24,7 +24,10 @@ def _load_completeness() -> pd.DataFrame | None:
     if not path.exists():
         return None
 
-    _completeness_cache = pd.read_csv(path)
+    raw = pd.read_csv(path)
+    # Нормализуем колонки под реальный формат Connectivity_783.csv
+    raw = raw.rename(columns={"Unnamed: 0": "root_id"})
+    _completeness_cache = raw
     return _completeness_cache
 
 

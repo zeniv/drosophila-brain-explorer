@@ -51,8 +51,21 @@ class DrosophilaSimulator:
             return
 
         logger.info("Загружаю коннектом...")
-        cls._connectivity  = pd.read_parquet(con_path)
-        cls._completeness  = pd.read_csv(cmp_path)
+        cls._connectivity = pd.read_parquet(con_path)
+
+        # Реальные колонки: Presynaptic_ID, Postsynaptic_ID, Connectivity, Excitatory
+        # Нормализуем для унификации кода
+        cls._connectivity = cls._connectivity.rename(columns={
+            "Presynaptic_ID":  "pre_root_id",
+            "Postsynaptic_ID": "post_root_id",
+            "Connectivity":    "n_syn",
+            "Excitatory":      "excitatory",
+        })
+
+        cls._completeness = pd.read_csv(cmp_path)
+        # Реальные колонки: Unnamed: 0 (root_id), Completed
+        cls._completeness = cls._completeness.rename(columns={"Unnamed: 0": "root_id"})
+
         logger.info(
             f"Коннектом загружен: {len(cls._connectivity):,} синапсов, "
             f"{cls._completeness['root_id'].nunique():,} нейронов"
@@ -88,10 +101,15 @@ class DrosophilaSimulator:
             cls.load_data()
 
         if cls._connectivity is None:
-            # Режим заглушки — для разработки без данных
+            logger.warning("Коннектом не загружен → mock режим")
             return cls._mock_result(neu_exc, params)
 
-        b2 = _get_brian2()
+        # Проверить наличие Brian2 до начала симуляции
+        try:
+            b2 = _get_brian2()
+        except RuntimeError:
+            logger.warning("Brian2 не установлен → mock режим (установите через conda)")
+            return cls._mock_result(neu_exc, params)
 
         # ── Настройка Brian2 ───────────────────────────────────────────────
         if params.n_proc == -1:
@@ -120,8 +138,8 @@ class DrosophilaSimulator:
         pre_idx  = conn_sub["pre_root_id"].map(id_to_idx).values
         post_idx = conn_sub["post_root_id"].map(id_to_idx).values
 
-        # Знак синапса: +1 возбуждение, -1 торможение
-        sign = np.where(conn_sub["nt_type"].isin(["ACh", "Glu", "OA", "DA"]), 1, -1)
+        # Знак синапса: Excitatory=1 → +1, Excitatory=0 → -1 (inhibitory)
+        sign = np.where(conn_sub["excitatory"].values == 1, 1, -1)
 
         # ── Brian2 нейронная группа (LIF) ─────────────────────────────────
         eqs = """
@@ -256,26 +274,41 @@ class DrosophilaSimulator:
             duration_ms=t_run,
         )
 
-    @staticmethod
-    def _mock_result(neu_exc: list[int], params: SimulationParams) -> ExperimentResult:
+    @classmethod
+    def _mock_result(cls, neu_exc: list[int], params: SimulationParams) -> ExperimentResult:
         """
-        Заглушка — возвращает синтетические данные когда коннектом не загружен.
-        Используется для разработки фронтенда без реальных данных.
+        Mock-режим: реалистичные синтетические данные.
+        Если коннектом загружен — берём реальных соседей возбуждённых нейронов.
         """
-        logger.warning("Используется MOCK результат (коннектом не загружен)!")
-        rng = np.random.default_rng(42)
-        n = min(len(neu_exc) * 5, 500)
-        ids = list(neu_exc) + list(rng.integers(1e12, 1e12 + 1000, size=max(0, n - len(neu_exc))))
+        logger.warning("MOCK режим (Brian2 не установлен или нет данных)")
+        rng = np.random.default_rng(seed=hash(tuple(sorted(neu_exc))) % (2**32))
 
-        top = [
-            NeuronResult(
+        # Если есть коннектом — найти реальных downstream нейронов
+        if cls._connectivity is not None and len(neu_exc) > 0:
+            conn = cls._connectivity
+            mask = conn["pre_root_id"].isin(neu_exc)
+            downstream = conn[mask]["post_root_id"].unique()
+            all_ids = list(neu_exc) + list(downstream[:200])
+        else:
+            all_ids = list(neu_exc)
+
+        n = max(len(all_ids), 10)
+
+        # Генерируем реалистичные firing rates (экспоненциальное распределение)
+        # Возбуждённые нейроны — выше, downstream — ниже
+        top = []
+        for i, nid in enumerate(all_ids[:100]):
+            if nid in neu_exc:
+                rate = round(float(rng.exponential(25.0)), 3)
+            else:
+                rate = round(float(rng.exponential(8.0)), 3)
+            top.append(NeuronResult(
                 neuron_id=int(nid),
-                mean_rate=round(float(rng.exponential(10.0)), 3),
-                spike_count=int(rng.poisson(15)),
-                std_rate=round(float(rng.exponential(2.0)), 3),
-            )
-            for nid in ids[:100]
-        ]
+                mean_rate=rate,
+                spike_count=int(rate * params.t_run / 1000 * params.n_run),
+                std_rate=round(rate * float(rng.uniform(0.1, 0.3)), 3),
+            ))
+
         top.sort(key=lambda x: x.mean_rate, reverse=True)
 
         return ExperimentResult(

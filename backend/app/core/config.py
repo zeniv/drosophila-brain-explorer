@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import List
+import os
 
 
 class Settings(BaseSettings):
@@ -8,8 +9,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://dro:dro_pass@postgres:5432/dro_db"
+    # Database (SQLite для dev, PostgreSQL для prod)
+    DATABASE_URL: str = "sqlite+aiosqlite:///./dro_dev.db"
 
     # Redis / Celery
     REDIS_URL: str = "redis://redis:6379/0"
@@ -17,21 +18,22 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:80"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
-    # Data paths (внутри контейнера)
-    DATA_DIR: str = "/app/data"
-    PATH_CONNECTOME: str = "/app/data/connections.parquet"
-    PATH_COMPLETENESS: str = "/app/data/completeness.csv"
-    RESULTS_DIR: str = "/app/data/results"
+    # Data paths
+    DATA_DIR: str = "../data"
+    PATH_CONNECTOME: str = "../data/connections.parquet"
+    PATH_COMPLETENESS: str = "../data/completeness.csv"
+    RESULTS_DIR: str = "../data/results"
 
     # Simulation defaults
-    DEFAULT_T_RUN: float = 1000.0    # ms
+    DEFAULT_T_RUN: float = 1000.0
     DEFAULT_N_RUN: int = 30
-    DEFAULT_N_PROC: int = -1         # -1 = all CPUs
+    DEFAULT_N_PROC: int = -1
 
     class Config:
-        env_file = ".env"
+        env_file = ".env.dev"
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
 
